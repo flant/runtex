@@ -1,0 +1,76 @@
+#!/usr/bin/env python
+
+import fcntl
+import signal
+import os
+import code
+import time
+
+class LockTimeoutError(Exception): pass
+class ExecuteTimeoutError(Exception): pass
+
+class Runtex:
+    instance = None
+
+    @classmethod
+    def init(self):
+        signal.signal(signal.SIGALRM, self.on_alarm)
+
+    @classmethod
+    def on_alarm(self, *args):
+        print("on_alarm {0}".format(self.instance))
+        if self.instance and not self.instance.locked:
+            raise LockTimeoutError
+        elif self.instance and self.instance.executing:
+            raise ExecuteTimeoutError
+
+    def __init__(self, file_name, lock_timeout=None, execute_timeout=None):
+        self.file_name = file_name
+        self.fd = None
+        self.lock_timeout = lock_timeout
+        self.execute_timeout = execute_timeout
+        self.locked = False
+        self.executing = False
+
+    def __enter__(self):
+        self.__class__.instance = self
+
+        self.fd = os.open(self.file_name, os.O_CREAT|os.O_WRONLY)
+
+        self.locked = False
+        if self.lock_timeout: signal.alarm(self.lock_timeout)
+        fcntl.flock(self.fd, fcntl.LOCK_EX)
+        if self.lock_timeout: signal.alarm(0)
+        self.locked = True
+        print("locked {0}".format(self.file_name))
+
+        os.ftruncate(self.fd, 0)
+        os.write(self.fd, "{0}\n".format(os.getpid()))
+        os.fsync(self.fd)
+
+        self.executing = True
+        if self.execute_timeout: signal.alarm(self.execute_timeout)
+
+        return self
+
+    def __exit__(self, *args):
+        if self.execute_timeout: signal.alarm(0)
+        self.executing = False
+        self.__class__.instance = None
+
+        os.close(self.fd)
+        self.fd = None
+        self.locked = False
+        print("unlocked {0}".format(self.file_name))
+
+Runtex.init()
+lockfile = "/tmp/testlock.pid"
+try:
+    with Runtex(lockfile, lock_timeout=5, execute_timeout=20):
+        time.sleep(60)
+except LockTimeoutError:
+    print("lock timeout")
+    exit(1)
+except ExecuteTimeoutError:
+    print("execute timeout")
+    exit(124)
