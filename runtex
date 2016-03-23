@@ -5,6 +5,9 @@ import signal
 import os
 import code
 import time
+import sys
+import getopt
+import md5
 
 class LockTimeoutError(Exception): pass
 class ExecuteTimeoutError(Exception): pass
@@ -18,14 +21,14 @@ class Runtex:
 
     @classmethod
     def on_alarm(self, *args):
-        print("on_alarm {0}".format(self.instance))
+        print("{0}.on_alarm {1}".format(self, self.instance))
         if self.instance and not self.instance.locked:
             raise LockTimeoutError
         elif self.instance and self.instance.executing:
             raise ExecuteTimeoutError
 
-    def __init__(self, file_name, lock_timeout=None, execute_timeout=None):
-        self.file_name = file_name
+    def __init__(self, lock_path, lock_timeout=None, execute_timeout=None):
+        self.lock_path = lock_path
         self.fd = None
         self.lock_timeout = lock_timeout
         self.execute_timeout = execute_timeout
@@ -35,14 +38,14 @@ class Runtex:
     def __enter__(self):
         self.__class__.instance = self
 
-        self.fd = os.open(self.file_name, os.O_CREAT|os.O_WRONLY)
+        self.fd = os.open(self.lock_path, os.O_CREAT|os.O_WRONLY)
 
         self.locked = False
         if self.lock_timeout: signal.alarm(self.lock_timeout)
         fcntl.flock(self.fd, fcntl.LOCK_EX)
         if self.lock_timeout: signal.alarm(0)
         self.locked = True
-        print("locked {0}".format(self.file_name))
+        print("locked {0}".format(self.lock_path))
 
         os.ftruncate(self.fd, 0)
         os.write(self.fd, "{0}\n".format(os.getpid()))
@@ -61,16 +64,78 @@ class Runtex:
         os.close(self.fd)
         self.fd = None
         self.locked = False
-        print("unlocked {0}".format(self.file_name))
+        print("unlocked {0}".format(self.lock_path))
 
-Runtex.init()
-lockfile = "/tmp/testlock.pid"
-try:
-    with Runtex(lockfile, lock_timeout=5, execute_timeout=20):
-        time.sleep(60)
-except LockTimeoutError:
-    print("lock timeout")
-    exit(1)
-except ExecuteTimeoutError:
-    print("execute timeout")
-    exit(124)
+class Cli:
+    lockfile_path = "/var/run/runtex2"
+
+    def usage(self):
+        print("""\
+Usage: runtex2 [-w SEC] [-t SEC] [/path/to/lockfile.pid] command [args]
+ Runs command with a file /path/to/lockfile.pid locked. If no lockfile.pid
+ is given, it will be automatically generated in {0}.
+
+Flags:
+ -h: print this message
+ -w SEC: fail only after trying to acquire a lock for SEC seconds (default: 0)
+ -t SEC: kill app after SEC seconds timeout (default: 0)
+        """.strip().format(self.lockfile_path))
+
+    def run(self):
+        m = md5.new() ; m.update(' '.join(sys.argv))
+        args_digest = m.hexdigest()
+
+        lock_timeout = None
+        execute_timeout = None
+        lock_path = None
+        shell_command = None
+
+        def complain_and_exit(message=None):
+            if message: print >> sys.stderr, "{0}\n".format(message)
+            self.usage()
+            exit(1)
+
+        try:
+            opts, non_opts = getopt.getopt(sys.argv[1:], 'ht:w:')
+        except getopt.GetoptError, err:
+            complain_and_exit(err)
+
+        for opt, arg in opts:
+            if opt in ('-h',):
+                self.usage()
+                exit(0)
+            elif opt in ('-w',):
+                try:
+                    lock_timeout = int(arg)
+                except ValueError, err:
+                    complain_and_exit("Wait before fail value (-w) "
+                                      "can be numeric only, given '{0}'.".format(arg))
+            elif opt in ('-t',):
+                try:
+                    execute_timeout = int(arg)
+                except ValueError, err:
+                    complain_and_exit("Timeout value (-t) "
+                                      "can be numeric only, given '{0}'.".format(arg))
+
+        if non_opts:
+            check_filename = os.path.split(non_opts[0])[-1]
+            if check_filename.endswith('.pid') and check_filename != '.pid':
+                lock_path = non_opts.pop(0)
+
+        shell_command = ' '.join(non_opts)
+
+        if not lock_path:
+            lock_path = os.path.join(self.lockfile_path, "runtex.{0}.pid".format(args_digest))
+
+        Runtex.init()
+        try:
+            with Runtex(lock_path, lock_timeout=lock_timeout, execute_timeout=execute_timeout):
+                time.sleep(60)
+        except LockTimeoutError:
+            print("lock timeout")
+            exit(1)
+        except ExecuteTimeoutError:
+            print("execute timeout")
+            exit(124)
+
+Cli().run()
