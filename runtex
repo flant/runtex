@@ -10,8 +10,12 @@ import getopt
 import md5
 import subprocess
 
-class LockNonBlockError(Exception): pass
-class LockTimeoutError(Exception): pass
+class LockError(Exception):
+    def __init__(self, locked_by_pid, *args, **kwargs):
+        Exception.__init__(self, *args, **kwargs)
+        self.locked_by_pid = locked_by_pid
+class LockNonBlockError(LockError): pass
+class LockTimeoutError(LockError): pass
 class ExecuteTimeoutError(Exception): pass
 
 class Runtex:
@@ -82,11 +86,14 @@ class Runtex:
         self.locked = False
         self.log("unlocked {0}".format(self.lock_path))
 
+    def locked_pid(self):
+        return int(open(self.lock_path, 'r').read().strip())
+
     def lock_non_block_error(self):
-        raise LockNonBlockError
+        raise LockNonBlockError(self.locked_pid())
 
     def lock_timeout_error(self):
-        raise LockTimeoutError
+        raise LockTimeoutError(self.locked_pid())
 
     def execute_timeout_error(self):
         raise ExecuteTimeoutError
@@ -105,6 +112,12 @@ Flags:
  -w SEC: fail only after trying to acquire a lock for SEC seconds (disabled by default)
  -t SEC: kill app after SEC seconds timeout (disabled by default)
         """.strip().format(self.lockfile_path))
+
+    def try_pstree(self, pid):
+        try:
+            subprocess.call(['pstree', str(pid)])
+        except OSError:
+            pass
 
     def run(self):
         m = md5.new() ; m.update(' '.join(sys.argv))
@@ -156,27 +169,30 @@ Flags:
         Runtex.init()
         try:
             with Runtex(lock_path, lock_timeout=lock_timeout, execute_timeout=execute_timeout):
-                cmd = subprocess.Popen(command)
-                try:
-                    cmd.wait()
-                except Exception:
-                    i = 1
-                    while not cmd.poll():
-                        if i > 10:
-                            Runtex.log("trying to kill command", stream=sys.stderr)
-                            cmd.kill()
-                            break
-                        else:
-                            Runtex.log("trying to terminate command for the {0} time".format(i), stream=sys.stderr)
-                            cmd.terminate()
-                        time.sleep(0.5)
-                        i += 1
-                    raise
-        except LockNonBlockError:
-            Runtex.log("already locked", stream=sys.stderr)
+                if command:
+                    cmd = subprocess.Popen(command)
+                    try:
+                        cmd.wait()
+                    except Exception:
+                        i = 1
+                        while not cmd.poll():
+                            if i > 10:
+                                Runtex.log("trying to kill command", stream=sys.stderr)
+                                cmd.kill()
+                                break
+                            else:
+                                Runtex.log("trying to terminate command for the {0} time".format(i), stream=sys.stderr)
+                                cmd.terminate()
+                            time.sleep(0.5)
+                            i += 1
+                        raise
+        except LockNonBlockError, err:
+            Runtex.log("already locked by pid '{0}'".format(err.locked_by_pid), stream=sys.stderr)
+            self.try_pstree(err.locked_by_pid)
             exit(1)
-        except LockTimeoutError:
-            Runtex.log("lock timeout", stream=sys.stderr)
+        except LockTimeoutError, err:
+            Runtex.log("lock timeout, locked by pid '{0}'".format(err.locked_by_pid), stream=sys.stderr)
+            self.try_pstree(err.locked_by_pid)
             exit(1)
         except ExecuteTimeoutError:
             Runtex.log("execute timeout", stream=sys.stderr)
