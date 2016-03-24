@@ -48,7 +48,7 @@ class Runtex:
         self.__class__.instance = self
 
         lock_dir_path = os.path.dirname(self.lock_path)
-        if not os.path.exists(lock_dir_path): os.makedirs(lock_dir_path)
+        if lock_dir_path and not os.path.exists(lock_dir_path): os.makedirs(lock_dir_path)
         self.fd = os.open(self.lock_path, os.O_CREAT|os.O_WRONLY)
 
         self.locked = False
