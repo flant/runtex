@@ -10,6 +10,7 @@ import getopt
 import md5
 import subprocess
 
+class LockNonBlockError(Exception): pass
 class LockTimeoutError(Exception): pass
 class ExecuteTimeoutError(Exception): pass
 
@@ -24,9 +25,9 @@ class Runtex:
     def on_alarm(self, *args):
         print("{0}.on_alarm {1}".format(self, self.instance))
         if self.instance and not self.instance.locked:
-            raise LockTimeoutError
+            self.instance.lock_timeout_error()
         elif self.instance and self.instance.executing:
-            raise ExecuteTimeoutError
+            self.instance.execute_timeout_error()
 
     def __init__(self, lock_path, lock_timeout=None, execute_timeout=None):
         self.lock_path = lock_path
@@ -44,11 +45,19 @@ class Runtex:
         self.fd = os.open(self.lock_path, os.O_CREAT|os.O_WRONLY)
 
         self.locked = False
-        if self.lock_timeout: signal.alarm(self.lock_timeout)
-        fcntl.flock(self.fd, fcntl.LOCK_EX)
-        if self.lock_timeout: signal.alarm(0)
+        flock_flags = fcntl.LOCK_EX
+        if self.lock_timeout:
+            signal.alarm(self.lock_timeout)
+        else:
+            flock_flags |= fcntl.LOCK_NB
+        try:
+            fcntl.flock(self.fd, flock_flags)
+        except IOError:
+            self.lock_non_block_error()
+        finally:
+            if self.lock_timeout: signal.alarm(0)
         self.locked = True
-        print("locked {0}".format(self.lock_path))
+        print("Locked {0}".format(self.lock_path))
 
         os.ftruncate(self.fd, 0)
         os.write(self.fd, "{0}\n".format(os.getpid()))
@@ -67,7 +76,16 @@ class Runtex:
         os.close(self.fd)
         self.fd = None
         self.locked = False
-        print("unlocked {0}".format(self.lock_path))
+        print("Unlocked {0}".format(self.lock_path))
+
+    def lock_non_block_error(self):
+        raise LockNonBlockError
+
+    def lock_timeout_error(self):
+        raise LockTimeoutError
+
+    def execute_timeout_error(self):
+        raise ExecuteTimeoutError
 
 class Cli:
     lockfile_path = "/tmp/runtex"
@@ -136,11 +154,14 @@ Flags:
         try:
             with Runtex(lock_path, lock_timeout=lock_timeout, execute_timeout=execute_timeout):
                 subprocess.call(shell_command, shell=True)
+        except LockNonBlockError:
+            print >> sys.stderr, "Already locked"
+            exit(1)
         except LockTimeoutError:
-            print("lock timeout")
+            print >> sys.stderr, "Lock timeout"
             exit(1)
         except ExecuteTimeoutError:
-            print("execute timeout")
+            print >> sys.stderr, "Execute timeout"
             exit(124)
 
 Cli().run()
