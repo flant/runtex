@@ -23,7 +23,6 @@ class Runtex:
 
     @classmethod
     def on_alarm(self, *args):
-        self.log("{0}.on_alarm {1}".format(self, self.instance))
         if self.instance and not self.instance.locked:
             self.instance.lock_timeout_error()
         elif self.instance and self.instance.executing:
@@ -77,6 +76,7 @@ class Runtex:
         self.executing = False
         self.__class__.instance = None
 
+        fcntl.flock(self.fd, fcntl.LOCK_UN)
         os.close(self.fd)
         self.fd = None
         self.locked = False
@@ -113,7 +113,7 @@ Flags:
         lock_timeout = None
         execute_timeout = None
         lock_path = None
-        shell_command = None
+        command = None
 
         def complain_and_exit(message=None):
             if message: Runtex.log("{0}\n".format(message), stream=sys.stderr)
@@ -148,8 +148,7 @@ Flags:
             check_filename = os.path.split(non_opts[0])[-1]
             if check_filename.endswith('.pid') and check_filename != '.pid':
                 lock_path = non_opts.pop(0)
-
-        shell_command = ' '.join(non_opts)
+        command = non_opts
 
         if not lock_path:
             lock_path = os.path.join(self.lockfile_path, "{0}.pid".format(args_digest))
@@ -157,7 +156,22 @@ Flags:
         Runtex.init()
         try:
             with Runtex(lock_path, lock_timeout=lock_timeout, execute_timeout=execute_timeout):
-                subprocess.call(shell_command, shell=True)
+                cmd = subprocess.Popen(command)
+                try:
+                    cmd.wait()
+                except Exception:
+                    i = 1
+                    while not cmd.poll():
+                        if i > 10:
+                            Runtex.log("trying to kill command", stream=sys.stderr)
+                            cmd.kill()
+                            break
+                        else:
+                            Runtex.log("trying to terminate command for the {0} time".format(i), stream=sys.stderr)
+                            cmd.terminate()
+                        time.sleep(0.5)
+                        i += 1
+                    raise
         except LockNonBlockError:
             Runtex.log("already locked", stream=sys.stderr)
             exit(1)
