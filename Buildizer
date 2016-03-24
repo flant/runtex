@@ -1,0 +1,12 @@
+build_type: fpm
+package_name: runtex3
+packagecloud: flant/main
+
+fpm_files:
+  /package/runtex: /usr/bin/runtex3
+
+target:
+- ubuntu-12.04
+- ubuntu-14.04
+- centos-centos6
+- centos-centos7
