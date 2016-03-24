@@ -23,11 +23,15 @@ class Runtex:
 
     @classmethod
     def on_alarm(self, *args):
-        print("{0}.on_alarm {1}".format(self, self.instance))
+        self.log("{0}.on_alarm {1}".format(self, self.instance))
         if self.instance and not self.instance.locked:
             self.instance.lock_timeout_error()
         elif self.instance and self.instance.executing:
             self.instance.execute_timeout_error()
+
+    @classmethod
+    def log(self, msg, stream=sys.stdout):
+        print >> stream, "runtex: {0}".format(msg)
 
     def __init__(self, lock_path, lock_timeout=None, execute_timeout=None):
         self.lock_path = lock_path
@@ -57,7 +61,7 @@ class Runtex:
         finally:
             if self.lock_timeout: signal.alarm(0)
         self.locked = True
-        print("Locked {0}".format(self.lock_path))
+        self.log("locked {0}".format(self.lock_path))
 
         os.ftruncate(self.fd, 0)
         os.write(self.fd, "{0}\n".format(os.getpid()))
@@ -76,7 +80,7 @@ class Runtex:
         os.close(self.fd)
         self.fd = None
         self.locked = False
-        print("Unlocked {0}".format(self.lock_path))
+        self.log("unlocked {0}".format(self.lock_path))
 
     def lock_non_block_error(self):
         raise LockNonBlockError
@@ -112,7 +116,7 @@ Flags:
         shell_command = None
 
         def complain_and_exit(message=None):
-            if message: print >> sys.stderr, "{0}\n".format(message)
+            if message: Runtex.log("{0}\n".format(message), stream=sys.stderr)
             self.usage()
             exit(1)
 
@@ -129,15 +133,15 @@ Flags:
                 try:
                     lock_timeout = int(arg)
                 except ValueError, err:
-                    complain_and_exit("Wait before fail value (-w) "
-                                      "can be numeric only, given '{0}'.".format(arg))
+                    complain_and_exit("wait before fail value (-w) "
+                                      "can be numeric only, given '{0}'".format(arg))
                 if lock_timeout <= 0: lock_timeout = None
             elif opt in ('-t',):
                 try:
                     execute_timeout = int(arg)
                 except ValueError, err:
-                    complain_and_exit("Timeout value (-t) "
-                                      "can be numeric only, given '{0}'.".format(arg))
+                    complain_and_exit("timeout value (-t) "
+                                      "can be numeric only, given '{0}'".format(arg))
                 if execute_timeout <= 0: execute_timeout = None
 
         if non_opts:
@@ -155,13 +159,13 @@ Flags:
             with Runtex(lock_path, lock_timeout=lock_timeout, execute_timeout=execute_timeout):
                 subprocess.call(shell_command, shell=True)
         except LockNonBlockError:
-            print >> sys.stderr, "Already locked"
+            Runtex.log("already locked", stream=sys.stderr)
             exit(1)
         except LockTimeoutError:
-            print >> sys.stderr, "Lock timeout"
+            Runtex.log("lock timeout", stream=sys.stderr)
             exit(1)
         except ExecuteTimeoutError:
-            print >> sys.stderr, "Execute timeout"
+            Runtex.log("execute timeout", stream=sys.stderr)
             exit(124)
 
 Cli().run()
