@@ -1,6 +1,6 @@
 build_type: fpm
 package_name: runtex3
-packagecloud: distorhead/main
+package_cloud: distorhead/main
 
 fpm_files:
   /package/runtex: /usr/bin/runtex3
