@@ -1,6 +1,6 @@
 build_type: fpm
 package_name: runtex3
-packagecloud: flant/main
+packagecloud: distorhead/main
 
 fpm_files:
   /package/runtex: /usr/bin/runtex3
