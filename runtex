@@ -99,7 +99,7 @@ class Runtex:
         raise ExecuteTimeoutError
 
 class Cli:
-    lockfile_path = "/tmp/{0}".format(os.path.basename(sys.argv[0]))
+    lockfile_path = "/var/run/runtex"
 
     def usage(self):
         print("""\
