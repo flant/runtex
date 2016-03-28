@@ -23,7 +23,8 @@ class Runtex:
     instance = None
 
     @classmethod
-    def process_init(self):
+    def process_init(self, argv):
+        setproctitle.setproctitle(' '.join(argv))
         signal.signal(signal.SIGALRM, self.on_alarm)
 
     @classmethod
@@ -87,6 +88,29 @@ class Runtex:
         self.fd = None
         self.locked = False
         self.logger.debug("unlocked {0}".format(self.lock_path))
+
+    def execute(self, command):
+        with self:
+            self.cmd = subprocess.Popen(command)
+            try:
+                self.cmd.wait()
+            except Exception, err:
+                i = 1
+                while not self.cmd.poll():
+                    if i > 10:
+                        self.logger.debug("trying to kill command")
+                        self.cmd.kill()
+                        break
+                    else:
+                        self.logger.debug("trying to terminate command for the {0} time".format(i))
+                        self.cmd.terminate()
+                    time.sleep(0.5)
+                    i += 1
+                raise
+            finally:
+                ret = self.cmd.returncode
+                self.cmd = None
+                return ret
 
     def locked_pid(self):
         return int(open(self.lock_path, 'r').read().strip())
@@ -187,28 +211,12 @@ Flags:
         if not lock_path:
             lock_path = os.path.join(self.lockfile_path, "{0}.pid".format(args_digest))
 
-        Runtex.process_init()
+        Runtex.process_init(argv)
         try:
-            with Runtex(self.logger, lock_path, lock_timeout=lock_timeout, execute_timeout=execute_timeout):
-                if command:
-                    setproctitle.setproctitle(' '.join(argv))
-                    cmd = subprocess.Popen(command)
-                    try:
-                        cmd.wait()
-                    except Exception:
-                        i = 1
-                        while not cmd.poll():
-                            if i > 10:
-                                self.logger.debug("trying to kill command")
-                                cmd.kill()
-                                break
-                            else:
-                                self.logger.debug("trying to terminate command for the {0} time".format(i))
-                                cmd.terminate()
-                            time.sleep(0.5)
-                            i += 1
-                        raise
-            exit(cmd.returncode)
+            ret = 0
+            if command:
+                ret = Runtex(self.logger, lock_path, lock_timeout, execute_timeout).execute(command)
+            exit(ret)
         except LockNonBlockError, err:
             self.logger.error("already locked by pid '{0}'".format(err.locked_by_pid))
             self.try_pstree(err.locked_by_pid)
