@@ -89,8 +89,11 @@ class Runtex:
         self.locked = False
         self.logger.debug("unlocked {0}".format(self.lock_path))
 
+    def lock(self):
+        return self
+
     def execute(self, command):
-        with self:
+        with self.lock():
             self.cmd = subprocess.Popen(command)
             try:
                 self.cmd.wait()
