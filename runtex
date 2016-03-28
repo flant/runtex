@@ -11,32 +11,42 @@ import md5
 import subprocess
 import setproctitle
 
-class LockError(Exception):
-    def __init__(self, locked_by_pid, *args, **kwargs):
+class BaseError(Exception):
+    def __init__(self, returncode, *args, **kwargs):
         Exception.__init__(self, *args, **kwargs)
+        self.returncode = returncode
+class LockError(BaseError):
+    def __init__(self, returncode, locked_by_pid, *args, **kwargs):
+        BaseError.__init__(self, returncode, *args, **kwargs)
         self.locked_by_pid = locked_by_pid
 class LockNonBlockError(LockError): pass
 class LockTimeoutError(LockError): pass
-class ExecuteTimeoutError(Exception): pass
+class ExecuteTimeoutError(BaseError): pass
 
 class Runtex:
-    instance = None
+    lock = None
+    command = None
 
     @classmethod
     def process_init(self, argv):
         setproctitle.setproctitle(' '.join(argv))
-        signal.signal(signal.SIGALRM, self.on_alarm)
+        signal.signal(signal.SIGALRM, self.on_alarm_signal)
+        for sig in [x for x in dir(signal) if x.startswith('SIG') and
+                                              not x.startswith('SIG_') and
+                                              not x in ['SIGSTOP', 'SIGKILL', 'SIGALRM',
+                                                        'SIGCHLD', 'SIGCLD']]:
+            signal.signal(getattr(signal, sig), self.proxy_signal_to_command)
 
     @classmethod
-    def on_alarm(self, *args):
-        if self.instance and not self.instance.locked:
-            self.instance.lock_timeout_error()
-        elif self.instance and self.instance.executing:
-            self.instance.execute_timeout_error()
+    def on_alarm_signal(self, *args):
+        if self.lock and not self.lock.locked:
+            self.lock.lock_timeout_error()
+        elif self.lock and self.lock.executing:
+            self.lock.execute_timeout_error()
 
     @classmethod
-    def log(self, msg, stream=sys.stdout):
-        print >> stream, "runtex: {0}".format(msg)
+    def proxy_signal_to_command(self, sig, frame):
+        if self.command: self.command.send_signal(sig)
 
     def __init__(self, logger, lock_path, lock_timeout=None, execute_timeout=None):
         self.logger = logger
@@ -48,7 +58,7 @@ class Runtex:
         self.executing = False
 
     def __enter__(self):
-        self.__class__.instance = self
+        self.__class__.lock = self
 
         lock_dir_path = os.path.dirname(self.lock_path)
         if lock_dir_path and not os.path.exists(lock_dir_path): os.makedirs(lock_dir_path)
@@ -81,7 +91,7 @@ class Runtex:
     def __exit__(self, *args):
         if self.execute_timeout: signal.alarm(0)
         self.executing = False
-        self.__class__.instance = None
+        self.__class__.lock = None
 
         fcntl.flock(self.fd, fcntl.LOCK_UN)
         os.close(self.fd)
@@ -94,38 +104,39 @@ class Runtex:
 
     def execute(self, command):
         with self.lock():
-            self.cmd = subprocess.Popen(command)
+            ret = None
+            self.__class__.command = subprocess.Popen(command)
             try:
-                self.cmd.wait()
-            except Exception, err:
+                self.__class__.command.wait()
+            except Exception:
                 i = 1
-                while not self.cmd.poll():
+                while not self.__class__.command.poll():
                     if i > 10:
                         self.logger.debug("trying to kill command")
-                        self.cmd.kill()
+                        self.__class__.command.kill()
                         break
                     else:
                         self.logger.debug("trying to terminate command for the {0} time".format(i))
-                        self.cmd.terminate()
+                        self.__class__.command.terminate()
                     time.sleep(0.5)
                     i += 1
                 raise
             finally:
-                ret = self.cmd.returncode
-                self.cmd = None
-                return ret
+                ret = self.__class__.command.returncode
+                self.__class__.command = None
+            return ret
 
     def locked_pid(self):
         return int(open(self.lock_path, 'r').read().strip())
 
     def lock_non_block_error(self):
-        raise LockNonBlockError(self.locked_pid())
+        raise LockNonBlockError(returncode=1, locked_by_pid=self.locked_pid())
 
     def lock_timeout_error(self):
-        raise LockTimeoutError(self.locked_pid())
+        raise LockTimeoutError(returncode=1, locked_by_pid=self.locked_pid())
 
     def execute_timeout_error(self):
-        raise ExecuteTimeoutError
+        raise ExecuteTimeoutError(returncode=124)
 
 class Logger:
     def __init__(self, debug_enabled=False):
@@ -223,13 +234,13 @@ Flags:
         except LockNonBlockError, err:
             self.logger.error("already locked by pid '{0}'".format(err.locked_by_pid))
             self.try_pstree(err.locked_by_pid)
-            exit(1)
+            exit(err.returncode)
         except LockTimeoutError, err:
             self.logger.error("lock timeout, locked by pid '{0}'".format(err.locked_by_pid))
             self.try_pstree(err.locked_by_pid)
-            exit(1)
-        except ExecuteTimeoutError:
+            exit(err.returncode)
+        except ExecuteTimeoutError, err:
             self.logger.error("execute timeout")
-            exit(124)
+            exit(err.returncode)
 
 Cli().run()
