@@ -9,6 +9,7 @@ import sys
 import getopt
 import md5
 import subprocess
+import setproctitle
 
 class LockError(Exception):
     def __init__(self, locked_by_pid, *args, **kwargs):
@@ -22,7 +23,7 @@ class Runtex:
     instance = None
 
     @classmethod
-    def init(self):
+    def process_init(self):
         signal.signal(signal.SIGALRM, self.on_alarm)
 
     @classmethod
@@ -36,7 +37,8 @@ class Runtex:
     def log(self, msg, stream=sys.stdout):
         print >> stream, "runtex: {0}".format(msg)
 
-    def __init__(self, lock_path, lock_timeout=None, execute_timeout=None):
+    def __init__(self, logger, lock_path, lock_timeout=None, execute_timeout=None):
+        self.logger = logger
         self.lock_path = lock_path
         self.fd = None
         self.lock_timeout = lock_timeout
@@ -64,7 +66,7 @@ class Runtex:
         finally:
             if self.lock_timeout: signal.alarm(0)
         self.locked = True
-        self.log("locked {0}".format(self.lock_path))
+        self.logger.debug("locked {0}".format(self.lock_path))
 
         os.ftruncate(self.fd, 0)
         os.write(self.fd, "{0}\n".format(os.getpid()))
@@ -84,7 +86,7 @@ class Runtex:
         os.close(self.fd)
         self.fd = None
         self.locked = False
-        self.log("unlocked {0}".format(self.lock_path))
+        self.logger.debug("unlocked {0}".format(self.lock_path))
 
     def locked_pid(self):
         return int(open(self.lock_path, 'r').read().strip())
@@ -98,8 +100,24 @@ class Runtex:
     def execute_timeout_error(self):
         raise ExecuteTimeoutError
 
+class Logger:
+    def __init__(self, debug_enabled=False):
+        self.debug_enabled = debug_enabled
+
+    def log(self, msg, stream=sys.stdout):
+        print >> stream, "runtex: {0}".format(msg)
+
+    def debug(self, msg):
+        if self.debug_enabled: return self.log(msg)
+
+    def error(self, msg):
+        return self.log(msg, stream=sys.stderr)
+
 class Cli:
     lockfile_path = "/var/run/runtex"
+
+    def __init__(self):
+        self.logger = Logger()
 
     def usage(self):
         print("""\
@@ -109,18 +127,19 @@ Usage: runtex2 [-w SEC] [-t SEC] [/path/to/lockfile.pid] command [args]
 
 Flags:
  -h: print this message
+ -d: print debug messages
  -w SEC: fail only after trying to acquire a lock for SEC seconds (disabled by default)
  -t SEC: kill app after SEC seconds timeout (disabled by default)
         """.strip().format(self.lockfile_path))
 
     def try_pstree(self, pid):
         try:
-            subprocess.call(['pstree', str(pid)])
+            subprocess.call(['pstree', '-ap', str(pid)])
         except OSError:
             pass
 
-    def run(self):
-        m = md5.new() ; m.update(' '.join(sys.argv))
+    def run(self, argv=sys.argv):
+        m = md5.new() ; m.update(' '.join(argv))
         args_digest = m.hexdigest()
 
         lock_timeout = None
@@ -129,12 +148,12 @@ Flags:
         command = None
 
         def complain_and_exit(message=None):
-            if message: Runtex.log("{0}\n".format(message), stream=sys.stderr)
+            if message: self.logger.error("{0}\n".format(message))
             self.usage()
             exit(1)
 
         try:
-            opts, non_opts = getopt.getopt(sys.argv[1:], 'ht:w:')
+            opts, non_opts = getopt.getopt(argv[1:], 'ht:w:d')
         except getopt.GetoptError, err:
             complain_and_exit(err)
 
@@ -156,6 +175,8 @@ Flags:
                     complain_and_exit("timeout value (-t) "
                                       "can be numeric only, given '{0}'".format(arg))
                 if execute_timeout <= 0: execute_timeout = None
+            elif opt in ('-d',):
+                self.logger.debug_enabled = True
 
         if non_opts:
             check_filename = os.path.split(non_opts[0])[-1]
@@ -166,10 +187,11 @@ Flags:
         if not lock_path:
             lock_path = os.path.join(self.lockfile_path, "{0}.pid".format(args_digest))
 
-        Runtex.init()
+        Runtex.process_init()
         try:
-            with Runtex(lock_path, lock_timeout=lock_timeout, execute_timeout=execute_timeout):
+            with Runtex(self.logger, lock_path, lock_timeout=lock_timeout, execute_timeout=execute_timeout):
                 if command:
+                    setproctitle.setproctitle(' '.join(argv))
                     cmd = subprocess.Popen(command)
                     try:
                         cmd.wait()
@@ -177,25 +199,26 @@ Flags:
                         i = 1
                         while not cmd.poll():
                             if i > 10:
-                                Runtex.log("trying to kill command", stream=sys.stderr)
+                                self.logger.debug("trying to kill command")
                                 cmd.kill()
                                 break
                             else:
-                                Runtex.log("trying to terminate command for the {0} time".format(i), stream=sys.stderr)
+                                self.logger.debug("trying to terminate command for the {0} time".format(i))
                                 cmd.terminate()
                             time.sleep(0.5)
                             i += 1
                         raise
+            exit(cmd.returncode)
         except LockNonBlockError, err:
-            Runtex.log("already locked by pid '{0}'".format(err.locked_by_pid), stream=sys.stderr)
+            self.logger.error("already locked by pid '{0}'".format(err.locked_by_pid))
             self.try_pstree(err.locked_by_pid)
             exit(1)
         except LockTimeoutError, err:
-            Runtex.log("lock timeout, locked by pid '{0}'".format(err.locked_by_pid), stream=sys.stderr)
+            self.logger.error("lock timeout, locked by pid '{0}'".format(err.locked_by_pid))
             self.try_pstree(err.locked_by_pid)
             exit(1)
         except ExecuteTimeoutError:
-            Runtex.log("execute timeout", stream=sys.stderr)
+            self.logger.error("execute timeout")
             exit(124)
 
 Cli().run()

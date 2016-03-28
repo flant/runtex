@@ -8,6 +8,14 @@ fpm_files:
   /usr/bin/runtex: /package/runtex
   /usr/bin/runtex2: /package/runtex
 
+os:
+  ubuntu:
+    prepare:
+      - apt-get install -y psmisc
+  centos:
+    prepare:
+      - yum install -y psmisc
+
 target:
 - ubuntu-12.04
 - ubuntu-14.04
