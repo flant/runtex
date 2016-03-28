@@ -1,9 +1,12 @@
 build_type: fpm
-package_name: runtex3
-package_cloud: distorhead/main
+package_name: runtex
+package_cloud: flant/main
+
+fpm_conflicts: [flant-scripts-runtex flant-scripts-runtex2]
 
 fpm_files:
-  /package/runtex: /usr/bin/runtex3
+  /usr/bin/runtex: /package/runtex
+  /usr/bin/runtex2: /package/runtex
 
 target:
 - ubuntu-12.04
