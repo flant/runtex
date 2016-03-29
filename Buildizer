@@ -6,8 +6,8 @@ package_cloud: flant/main
 fpm_conflicts: [flant-scripts-runtex, flant-scripts-runtex2]
 
 fpm_files:
-  /usr/bin/runtex: /package/runtex
-  /usr/bin/runtex2: /package/runtex
+  /usr/sbin/runtex: /package/runtex
+  /usr/sbin/runtex2: /package/runtex
 
 os:
   ubuntu:

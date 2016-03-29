@@ -12,16 +12,34 @@ import subprocess
 import setproctitle
 
 class BaseError(Exception):
-    def __init__(self, returncode, *args, **kwargs):
-        Exception.__init__(self, *args, **kwargs)
+    def __init__(self, returncode, message):
+        Exception.__init__(self, message)
         self.returncode = returncode
+
 class LockError(BaseError):
-    def __init__(self, returncode, locked_by_pid, *args, **kwargs):
-        BaseError.__init__(self, returncode, *args, **kwargs)
+    def __init__(self, locked_by_pid, returncode, message):
+        BaseError.__init__(self, returncode, message)
         self.locked_by_pid = locked_by_pid
-class LockNonBlockError(LockError): pass
-class LockTimeoutError(LockError): pass
-class ExecuteTimeoutError(BaseError): pass
+
+class LockNonBlockError(LockError):
+    def __init__(self, locked_by_pid):
+        LockError.__init__(self, returncode=1,
+                                 message="already locked by pid '{0}'".format(locked_by_pid),
+                                 locked_by_pid=locked_by_pid)
+
+class LockTimeoutError(LockError):
+    def __init__(self, locked_by_pid):
+        LockError.__init__(self, returncode=1,
+                                 message="lock timeout, locked by pid '{0}'".format(locked_by_pid),
+                                 locked_by_pid=locked_by_pid)
+
+class ExecuteTimeoutError(BaseError):
+    def __init__(self):
+        BaseError.__init__(self, returncode=124, message="execute timeout")
+
+class CommandError(BaseError):
+    def __init__(self, message):
+        BaseError.__init__(self, returncode=1, message=message)
 
 class Runtex:
     lock = None
@@ -105,7 +123,11 @@ class Runtex:
     def execute(self, command):
         with self.lock():
             ret = None
-            self.__class__.command = subprocess.Popen(command)
+            try:
+                self.__class__.command = subprocess.Popen(command)
+            except OSError, err:
+                raise CommandError(message="unable to run command '{0}': "\
+                                           "{1}".format(' '.join(command), err))
             try:
                 self.__class__.command.wait()
             except Exception:
@@ -130,13 +152,13 @@ class Runtex:
         return int(open(self.lock_path, 'r').read().strip())
 
     def lock_non_block_error(self):
-        raise LockNonBlockError(returncode=1, locked_by_pid=self.locked_pid())
+        raise LockNonBlockError(locked_by_pid=self.locked_pid())
 
     def lock_timeout_error(self):
-        raise LockTimeoutError(returncode=1, locked_by_pid=self.locked_pid())
+        raise LockTimeoutError(locked_by_pid=self.locked_pid())
 
     def execute_timeout_error(self):
-        raise ExecuteTimeoutError(returncode=124)
+        raise ExecuteTimeoutError()
 
 class Logger:
     def __init__(self, debug_enabled=False):
@@ -231,16 +253,12 @@ Flags:
             if command:
                 ret = Runtex(self.logger, lock_path, lock_timeout, execute_timeout).execute(command)
             exit(ret)
-        except LockNonBlockError, err:
-            self.logger.error("already locked by pid '{0}'".format(err.locked_by_pid))
+        except (LockNonBlockError, LockTimeoutError), err:
+            self.logger.error(err)
             self.try_pstree(err.locked_by_pid)
             exit(err.returncode)
-        except LockTimeoutError, err:
-            self.logger.error("lock timeout, locked by pid '{0}'".format(err.locked_by_pid))
-            self.try_pstree(err.locked_by_pid)
-            exit(err.returncode)
-        except ExecuteTimeoutError, err:
-            self.logger.error("execute timeout")
+        except BaseError, err:
+            self.logger.error(err)
             exit(err.returncode)
 
 Cli().run()
