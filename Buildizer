@@ -3,7 +3,7 @@ package_name: runtex
 package_version: 0.0.1-1
 package_cloud: flant/main
 
-fpm_conflicts: [flant-scripts-runtex flant-scripts-runtex2]
+fpm_conflicts: [flant-scripts-runtex, flant-scripts-runtex2]
 
 fpm_files:
   /usr/bin/runtex: /package/runtex
