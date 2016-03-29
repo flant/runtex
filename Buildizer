@@ -3,12 +3,11 @@ package_name: runtex
 package_version: 0.0.1-3
 package_cloud: flant/main
 
-fpm_conflicts: [flant-scripts-runtex, flant-scripts-runtex2]
-
+fpm_description: Runtex
 fpm_files:
   /usr/sbin/runtex: /package/runtex
   /usr/sbin/runtex2: /package/runtex
-
+fpm_conflicts: [flant-scripts-runtex, flant-scripts-runtex2]
 fpm_depends: [python-setproctitle, psmisc]
 
 target:
