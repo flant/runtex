@@ -1,0 +1,1 @@
+15 4 * * * root /usr/bin/find /var/run/runtex -mtime 1 -exec rm {} \;

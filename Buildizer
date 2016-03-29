@@ -4,9 +4,13 @@ package_version: 0.0.1-4
 package_cloud: flant/main
 
 fpm_description: Runtex
+
 fpm_files:
   /usr/sbin/runtex: /package/runtex
   /usr/sbin/runtex2: /package/runtex
+fpm_config_files:
+  /etc/cron.d/runtex: /package/config/cron
+
 fpm_conflicts: [flant-scripts-runtex, flant-scripts-runtex2]
 fpm_depends: [python-setproctitle, psmisc]
 
