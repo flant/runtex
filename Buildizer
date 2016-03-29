@@ -11,10 +11,17 @@ fpm_files:
 os:
   ubuntu:
     prepare:
-      - apt-get install -y psmisc
+    - apt-get install -y psmisc python-setproctitle
   centos:
     prepare:
-      - yum install -y psmisc
+    - yum install -y psmisc
+  centos-centos6:
+    prepare:
+    - yum install -y epel-release
+    - yum install --enablerepo=epel -y python-setproctitle
+  centos-centos7:
+    prepare:
+    - yum install -y python-setproctitle
 
 target:
 - ubuntu-12.04
