@@ -9,20 +9,7 @@ fpm_files:
   /usr/sbin/runtex: /package/runtex
   /usr/sbin/runtex2: /package/runtex
 
-os:
-  ubuntu:
-    prepare:
-    - apt-get install -y psmisc python-setproctitle
-  centos:
-    prepare:
-    - yum install -y psmisc
-  centos-centos6:
-    prepare:
-    - yum install -y epel-release
-    - yum install --enablerepo=epel -y python-setproctitle
-  centos-centos7:
-    prepare:
-    - yum install -y python-setproctitle
+fpm_depends: [python-setproctitle, psmisc]
 
 target:
 - ubuntu-12.04
