@@ -7,7 +7,7 @@ import code
 import time
 import sys
 import getopt
-import md5
+import hashlib
 import subprocess
 import setproctitle
 
@@ -199,7 +199,7 @@ Flags:
             pass
 
     def run(self, argv=sys.argv):
-        m = md5.new() ; m.update(' '.join(argv))
+        m = hashlib.md5() ; m.update(' '.join(argv))
         args_digest = m.hexdigest()
 
         lock_timeout = None
