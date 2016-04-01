@@ -1,6 +1,6 @@
 build_type: fpm
 package_name: runtex
-package_version: 0.0.1-10
+package_version: 0.0.1-11
 package_cloud: flant/main
 
 fpm_description: Runtex
@@ -8,10 +8,10 @@ fpm_maintainer: timofey.kirillov@flant.ru
 fpm_url: https://github.com/flant/runtex
 
 fpm_files:
-  /usr/sbin/runtex: /package/runtex
-  /usr/sbin/runtex2: /package/runtex
+  /usr/sbin/runtex: runtex
+  /usr/sbin/runtex2: runtex
 fpm_config_files:
-  /etc/cron.d/runtex: /package/config/cron
+  /etc/cron.d/runtex: config/cron
 
 fpm_depends: [python-setproctitle, psmisc]
 
