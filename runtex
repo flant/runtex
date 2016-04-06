@@ -181,7 +181,7 @@ class Cli:
 
     def usage(self):
         print("""\
-Usage: runtex2 [-w SEC] [-t SEC] [/path/to/lockfile.pid] command [args]
+Usage: runtex [-w SEC] [-t SEC] [/path/to/lockfile.pid] command [args]
  Runs command with a file /path/to/lockfile.pid locked. If no lockfile.pid
  is given, it will be automatically generated in {0}.
 
