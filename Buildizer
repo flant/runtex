@@ -15,10 +15,9 @@ fpm_config_files:
 
 fpm_depends: [python-setproctitle, psmisc]
 
-os:
-  ubuntu:
-    fpm_provides: [flant-scripts-runtex, flant-scripts-runtex2]
-    fpm_conflicts: [flant-scripts-runtex, flant-scripts-runtex2]
+ubuntu:
+  fpm_provides: [flant-scripts-runtex, flant-scripts-runtex2]
+  fpm_conflicts: [flant-scripts-runtex, flant-scripts-runtex2]
 
 target:
 - ubuntu-12.04
