@@ -20,8 +20,8 @@ ubuntu:
   fpm_conflicts: [flant-scripts-runtex, flant-scripts-runtex2]
 
 target:
-- ubuntu-12.04
-- ubuntu-14.04
-- ubuntu-16.04
-- centos-centos6
-- centos-centos7
+- ubuntu/12.04
+- ubuntu/14.04
+- ubuntu/16.04
+- centos/centos6
+- centos/centos7
