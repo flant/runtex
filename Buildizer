@@ -9,7 +9,7 @@ fpm_description: Runtex
 fpm_url: https://github.com/flant/runtex
 
 fpm_files:
-  /usr/sbin/runtex: runtex
+  /usr/sbin/runtex: ~
   /usr/sbin/runtex2: runtex
 fpm_config_files:
   /etc/cron.d/runtex: config/cron
