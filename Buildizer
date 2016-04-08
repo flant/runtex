@@ -1,6 +1,6 @@
 build_type: fpm
 package_name: runtex
-package_version: 0.0.1-12
+package_version: 0.0.1-13
 package_cloud: flant/main
 
 maintainer: Timofey Kirillov <timofey.kirillov@flant.com>
